@@ -1,0 +1,178 @@
+---
+title: "Untitled"
+author: "testing"
+date: "4/5/2022"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## LOADING REQUIRED LIBRARIES
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+library(psych)                 # for pairs plotting
+library(factoextra)            # for extracting the result of pca
+library(FactoMineR)            # for performing the actual pca
+library(FactoInvestigate)      # for investigating outliers
+library(ggplot2)               # for plotting charts
+library(rrcov)                 # for fitting pca
+library(corrplot)              # for correlation plot
+library(mvnormtest)            # To test for multivariate normality
+```
+
+## DATA SPECIFICATION
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+#NOTE: we first copy our "Melon.rdata" to the document folder before running the codes
+load("Melon.Rdata") 
+set.seed(0462774)
+mygroup <- which(rmultinom(1, 1, c(0.25,0.25,0.25,0.25)) == 1)
+mysample <- sample(which(y == mygroup), 180)
+
+X_train <- data.frame(X[mysample[1:90], ])
+X_valid <- data.frame(X[mysample[91:180], ])
+
+y = factor(y, labels = c('D','H','Ha','E'))
+y_train <- data.frame(y[mysample[1:90]])
+y_valid <- data.frame(y[mysample[91:180] ])
+
+```
+
+
+## QUESTION 1 (PLOTTING THE SPECTRA)
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+pairs.panels(X[,c(1:10)],
+             gap = 0,
+             bg = c("red", "yellow", "blue","green")[y],
+             pch=21,stars = TRUE)
+pairs.panels(X[,c(246:255)],
+             gap = 0,
+             bg = c("red", "yellow", "blue","green")[y],
+             pch=21,stars = TRUE)
+```
+Since the number of variables in this dataset is 256, which seems impossible to plot all at one screen, we consider inspecting the pattern of correlation between the first 10 and the last 10 variable. The result seems similar across the samples as the group *E* (colour-coded green) tends to be more evident compared to other groups. This group is immediately followed by the group *Ha* (colour-coded Blue) while the other two groups are hardly noticed.
+It is also evident from the variable pairing that most of the variables are highly correlated (upto a correlation of 0.8) which indicates high similarity, while some of the variables are not correlated at all. The significance of the correlation are indicated by stars on the correlation value. The correlation level of this kind however does not indicate that they are not measured on the same scale, rather it indicates that more result are obtained from the one observation to another.
+
+
+## QUESTION 2 (FORMULATING THE Classical PCA MODEL)
+
+### PCA model fitting
+The result of the principal component analysis is: 
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+Melon.classic.pca <- PcaClassic(X_train, graph = FALSE,k = 10)  # using the rrcov package
+summary(Melon.classic.pca)
+Melon.pca <- PCA(X_train,graph = FALSE)   #using the factoMineR package
+```
+The indicates that a cumulative variation of 95.1% can be explained using only the first 4 principal component
+
+### Our argument of the use of covariance matrix for PCA
+Since the data given indicate that we are working on the result of a spectroscopy experiment conducted on n = 2158 cantaloupe melons of four different
+cultivars, it reveals that the result are possibly on similar scale and would require us to use the covariance matrix as the basis for our PCA. To further confirm this,
+we inspect the data and found that it seems  to be scaled (i.e. the range and scale of variables are not widely dispersed) this made it evident that the covariance matrix is suitable for this study. Thus to use the covariance matrix, we will exclude the scaling option in the PCA() which will result in the default (covariance) model
+
+### How we choose the number of components
+To know the desired number of principal component suitable for this analysis, we will first inspect the result of the eigen values to know the amount of variation retained by each principal component. The eigen value can be extracted using the code below:
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+Melon.eigen = get_eigenvalue(Melon.pca)
+head(Melon.eigen,5)
+```
+By first considering the cummulative variance percent, the result of the eigen value indicate that we can explain 94% of variation in the dataset using only 3 principal component. However if we consider the variance percent, we can see that only component 1 and 2 shows higher variance explanatory performance. Thus i might suggest that only the first two component will suffice for this study. However a more efficient way to 
+determine the optimal number of component is to use the scree plot. The code need to obtain the scree plot is given below:
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+fviz_eig(Melon.pca, addlabels = TRUE, ylim = c(0, 80))
+```
+The optimal number of dimensions to choose is indicated by the elbow joint in the scree plot (3 Dimension). Thus conclude that the best number of dimension is 3 dimensions.
+
+### Discussing our result
+The component of the pca are as follow:
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+Melon.result.variable = get_pca_var(Melon.pca)
+```
+
+### Plotting the scores and loadings
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+fviz_pca_var(Melon.pca, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),select.ind = list(contrib = 50,cos2 = .95),repel = TRUE # Avoid text overlapping
+             )
+
+```
+The plot above indicates the respective scores of the variables across the individual principal components observation with similar scores points toward the same direction.
+
+```{r, warning=FALSE,message=FALSE, echo=FALSE}
+par(mfrow=c(1,2))
+corrplot(Melon.classic.pca$loadings[c(1:10),], is.corr=FALSE, col.lim = c(-1,1), method="color",tl.col="black", addgrid.col="grey",main = "First ten variable loadings")
+corrplot(Melon.classic.pca$loadings[c(246:256),], is.corr=FALSE, col.lim = c(-1,1), method="color",tl.col="black", addgrid.col="grey",main = "Last ten variable loadings")
+```
+The plot above shows how well the first ten and the last ten variables load on the ten principal component
+
+### To obtain the possible oultiers
+```{r, warning=FALSE,message=FALSE, echo=FALSE}
+pca.outlier <- PcaClassic(X_train, k=3, crit.pca.distances=0.99)
+plot(pca.outlier, pch=19)
+
+# To know the observartions that are outliers
+which(pca.outlier$od > pca.outlier$cutoff.od)   # To know orthogonal outliers
+which(pca.outlier$sd > pca.outlier$cutoff.sd)   # To know bad PCA_leverage points
+```
+Outliers included in the model are observation number 7,11,13,29,30 and 55. While 13 and 29 are orthogonal outliers, 7,11,30 and 55 are bad PCA_leverage points
+
+## QUESTION 3 (ROBUST PCA)
+
+### Robust PCA model
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+Robust.pca <- PcaHubert(X_train, k=3, crit.pca.distances=0.99)
+# Remove the # symbol below to obtain the plot of the robust pca
+#plot(Robust.pca, pch=19)
+```
+
+
+### Loadings and scores from Robust PCA model
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+par(mfrow=c(2,2))
+matplot(-Melon.classic.pca$loadings, type="l", xlab="Wavelength", ylab="Loadings",
+main="Loadings Classic PCA")
+matplot(-Robust.pca$loadings, type="l", xlab="Wavelength", ylab="Loadings",
+main="Loadings robust PCA")
+
+plot(Melon.classic.pca$scores, pch=19, main="Scores Classic PCA")
+points(0, 0, pch=18, col="firebrick", cex=2)
+plot(Robust.pca$scores, pch=19, main="Scores robust PCA")
+points(0, 0, pch=18, col="firebrick", cex=2)
+
+```
+Using 10 principal component in the classical model, it is evident that most of the components are loaded around zeros while the loadings of the robust pca deviate as much as posible away from zero (negatively or positively).
+Also the first two correlation now have a positive linear relationship compared to the previous negative and fairly linear relationship in the classical model
+
+## QUESTION 4 (MAKING PREDICTION FOR THE VALIDATION SET)
+```{r, warning=FALSE,message=FALSE, echo=FALSE}
+trg <- predict(Robust.pca, X_train)
+trg <- data.frame(trg, y_train)
+tst <- predict(Robust.pca, X_valid)
+tst <- data.frame(tst, y_valid)
+```
+
+### combining the training and validation set
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+X_train$type = 0
+X_train$y = y_train
+X_valid$type = 1
+X_valid$y = y_valid
+combined_data = rbind(X_train,X_valid)
+# to make outlier map
+fact = c("red",'green')[factor(combined_data$type,labels = c('training','validation'))]
+combined.pca.outlier <- PcaClassic(combined_data[,-c(257,258)], k=3, crit.pca.distances=0.99)
+plot(combined.pca.outlier, pch=19,col = fact)
+legend(x = "topright", c("train","validation"), cex =.8 ,col = c('red', 'green'))
+# To know the variables that are outliers
+which(combined.pca.outlier$od > combined.pca.outlier$cutoff.od)   # To know orthogonal outliers
+which(combined.pca.outlier$sd > combined.pca.outlier$cutoff.sd)   # To know bad PCA_leverage points
+```
+
+### QUESTION 5
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+Correct.data <- X_train[-c(3,7,8,11,13,15,16,19,24,29,30,43,46,50, 55, 56,61,63,66),]
+regular.pca <- PcaClassic(Correct.data[,-c(257,258)], k=3, crit.pca.distances=0.99)
+plot(regular.pca, pch=19)
+mshapiro.test(t(regular.pca$scores))   #test of multivariate normality
+```
+The multinomial normality test result in a p-value of 0.02115 which indicates that we will reject the null hypothesis that the scores come from a multivariate normal distribution.
